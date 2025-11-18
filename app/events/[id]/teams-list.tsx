@@ -74,17 +74,21 @@ export default function TeamsList({
 
         // Apply search filter if search text is provided
         if (searchText) {
+          // Sanitize search text to prevent query injection
+          const sanitizedSearch = searchText.replace(/[%,]/g, '')
           // Search in both name and description
           filters.push(
-            `name.ilike.%${searchText}%,description.ilike.%${searchText}%`
+            `name.ilike.%${sanitizedSearch}%,description.ilike.%${sanitizedSearch}%`
           )
         }
 
         // Apply skill filter if a skill is selected
         if (selectedSkill) {
+          // Sanitize skill filter (should already be from dropdown, but ensure safety)
+          const sanitizedSkill = selectedSkill.replace(/[%,]/g, '')
           // Search for skill in both name and description
           filters.push(
-            `name.ilike.%${selectedSkill}%,description.ilike.%${selectedSkill}%`
+            `name.ilike.%${sanitizedSkill}%,description.ilike.%${sanitizedSkill}%`
           )
         }
 
