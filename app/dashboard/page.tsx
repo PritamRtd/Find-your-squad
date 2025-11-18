@@ -59,7 +59,7 @@ export default async function DashboardPage() {
 
       return {
         ...membership,
-        leaderContactInfo: leader?.profiles?.contact_info || 'Not available',
+        leaderContactInfo: (leader as any)?.profiles?.contact_info || 'Not available',
       }
     })
   )
@@ -167,11 +167,11 @@ export default async function DashboardPage() {
                           className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
                         >
                           <h3 className="text-lg font-semibold text-gray-900">
-                            {membership.teams.name}
+                            {(membership.teams as any).name}
                           </h3>
-                          {membership.teams.description && (
+                          {(membership.teams as any).description && (
                             <p className="mt-2 text-sm text-gray-600">
-                              {membership.teams.description}
+                              {(membership.teams as any).description}
                             </p>
                           )}
                           <div className="mt-4 space-y-2">
@@ -189,7 +189,7 @@ export default async function DashboardPage() {
                                   d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                                 />
                               </svg>
-                              Event: {membership.teams.events?.title || 'Unknown'}
+                              Event: {(membership.teams as any).events?.title || 'Unknown'}
                             </div>
                             <div className="rounded-md bg-green-50 p-3 mt-4">
                               <div className="flex">

@@ -130,7 +130,7 @@ export default async function RequestsPage() {
                               {userEmailMap.get(request.user_id) || 'Unknown User'}
                             </h3>
                             <span className="ml-3 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800">
-                              {request.teams.name}
+                              {(request.teams as any).name}
                             </span>
                           </div>
                           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -139,7 +139,7 @@ export default async function RequestsPage() {
                                 Year of Study
                               </p>
                               <p className="mt-1 text-sm text-gray-900">
-                                {request.profiles.year_of_study || 'Not specified'}
+                                {(request.profiles as any).year_of_study || 'Not specified'}
                               </p>
                             </div>
                             <div>
@@ -147,7 +147,7 @@ export default async function RequestsPage() {
                                 Branch
                               </p>
                               <p className="mt-1 text-sm text-gray-900">
-                                {request.profiles.branch || 'Not specified'}
+                                {(request.profiles as any).branch || 'Not specified'}
                               </p>
                             </div>
                             <div>
@@ -155,7 +155,7 @@ export default async function RequestsPage() {
                                 Skills
                               </p>
                               <p className="mt-1 text-sm text-gray-900">
-                                {request.profiles.skills || 'Not specified'}
+                                {(request.profiles as any).skills || 'Not specified'}
                               </p>
                             </div>
                           </div>
