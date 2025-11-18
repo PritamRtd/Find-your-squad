@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import LogoutButton from './logout-button'
 
 export default async function DashboardPage() {
@@ -37,7 +38,13 @@ export default async function DashboardPage() {
                 </h1>
               </div>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/events"
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                Browse Events
+              </Link>
               <LogoutButton />
             </div>
           </div>
