@@ -14,6 +14,17 @@ export async function joinTeam(teamId: string, userId: string) {
   const supabase = await createClient()
 
   try {
+    // Verify that the authenticated user matches the userId parameter
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      throw new Error('Authentication required')
+    }
+    
+    if (user.id !== userId) {
+      throw new Error('Unauthorized: You can only apply for yourself')
+    }
+
     // 1. Fetch the team data including rules
     const { data: team, error: teamError } = await supabase
       .from('teams')
