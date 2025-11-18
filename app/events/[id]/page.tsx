@@ -97,7 +97,11 @@ export default async function EventDetailPage({
               <h2 className="text-xl font-semibold text-gray-900 mb-4">
                 Teams
               </h2>
-              <TeamsList teams={teams || []} userId={user.id} />
+              <TeamsList
+                initialTeams={teams || []}
+                userId={user.id}
+                eventId={id}
+              />
             </div>
           </div>
         </main>

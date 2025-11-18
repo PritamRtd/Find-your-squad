@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import TeamCard from './team-card'
 
 interface Team {
@@ -14,8 +15,9 @@ interface Team {
 }
 
 interface TeamsListProps {
-  teams: Team[]
+  initialTeams: Team[]
   userId: string
+  eventId: string
 }
 
 // Common skills that teams might need
@@ -40,29 +42,85 @@ const SKILL_OPTIONS = [
   'Testing',
 ]
 
-export default function TeamsList({ teams, userId }: TeamsListProps) {
+export default function TeamsList({
+  initialTeams,
+  userId,
+  eventId,
+}: TeamsListProps) {
+  const [teams, setTeams] = useState<Team[]>(initialTeams)
   const [searchText, setSearchText] = useState('')
   const [selectedSkill, setSelectedSkill] = useState('')
+  const [loading, setLoading] = useState(false)
+  const supabase = createClient()
 
-  const filteredTeams = useMemo(() => {
-    return teams.filter((team) => {
-      // Filter by search text - check if description or name contains the search text
-      const matchesSearch =
-        !searchText ||
-        team.name.toLowerCase().includes(searchText.toLowerCase()) ||
-        (team.description &&
-          team.description.toLowerCase().includes(searchText.toLowerCase()))
+  useEffect(() => {
+    const fetchFilteredTeams = async () => {
+      setLoading(true)
+      try {
+        // Start with the base query
+        let query = supabase
+          .from('teams')
+          .select(
+            `
+            *,
+            team_members(count)
+          `
+          )
+          .eq('event_id', eventId)
+          .order('created_at', { ascending: false })
 
-      // Filter by skill - check if description or name implies a need for the selected skill
-      const matchesSkill =
-        !selectedSkill ||
-        team.name.toLowerCase().includes(selectedSkill.toLowerCase()) ||
-        (team.description &&
-          team.description.toLowerCase().includes(selectedSkill.toLowerCase()))
+        // Build filter conditions
+        const filters: string[] = []
 
-      return matchesSearch && matchesSkill
-    })
-  }, [teams, searchText, selectedSkill])
+        // Apply search filter if search text is provided
+        if (searchText) {
+          // Search in both name and description
+          filters.push(
+            `name.ilike.%${searchText}%,description.ilike.%${searchText}%`
+          )
+        }
+
+        // Apply skill filter if a skill is selected
+        if (selectedSkill) {
+          // Search for skill in both name and description
+          filters.push(
+            `name.ilike.%${selectedSkill}%,description.ilike.%${selectedSkill}%`
+          )
+        }
+
+        // Apply all filters (they work as AND between filters, OR within each filter)
+        filters.forEach((filter) => {
+          query = query.or(filter)
+        })
+
+        const { data, error } = await query
+
+        if (error) {
+          console.error('Error fetching teams:', error)
+          setTeams(initialTeams) // Fallback to initial teams on error
+        } else {
+          setTeams(data || [])
+        }
+      } catch (error) {
+        console.error('Error in fetchFilteredTeams:', error)
+        setTeams(initialTeams)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // Debounce the search to avoid too many requests
+    const timeoutId = setTimeout(() => {
+      if (searchText || selectedSkill) {
+        fetchFilteredTeams()
+      } else {
+        setTeams(initialTeams)
+        setLoading(false)
+      }
+    }, 300) // 300ms debounce
+
+    return () => clearTimeout(timeoutId)
+  }, [searchText, selectedSkill, eventId, initialTeams, supabase])
 
   return (
     <div>
@@ -122,13 +180,42 @@ export default function TeamsList({ teams, userId }: TeamsListProps) {
       {/* Results count */}
       {(searchText || selectedSkill) && (
         <p className="mb-4 text-sm text-gray-600">
-          Showing {filteredTeams.length} of {teams.length} team
-          {teams.length !== 1 ? 's' : ''}
+          {loading ? (
+            'Searching...'
+          ) : (
+            <>
+              Showing {teams.length} of {initialTeams.length} team
+              {initialTeams.length !== 1 ? 's' : ''}
+            </>
+          )}
         </p>
       )}
 
       {/* Teams Grid */}
-      {filteredTeams.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center items-center py-12">
+          <svg
+            className="animate-spin h-8 w-8 text-blue-600"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            ></circle>
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+        </div>
+      ) : teams.length === 0 ? (
         <div className="rounded-lg border-4 border-dashed border-gray-200 bg-white p-12 text-center">
           <svg
             className="mx-auto h-12 w-12 text-gray-400"
@@ -154,7 +241,7 @@ export default function TeamsList({ teams, userId }: TeamsListProps) {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredTeams.map((team) => (
+          {teams.map((team) => (
             <TeamCard key={team.id} team={team} userId={userId} />
           ))}
         </div>
