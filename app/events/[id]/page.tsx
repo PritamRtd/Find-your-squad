@@ -36,10 +36,12 @@ export default async function EventDetailPage({
     .from('teams')
     .select(`
       *,
-      team_members(count)
+      team_members(id) 
     `)
     .eq('event_id', id)
     .order('created_at', { ascending: false })
+
+// ... rest of code
 
   return (
     <div className="min-h-screen bg-gray-50">
