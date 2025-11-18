@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import CreateTeamModal from './create-team-modal'
+import TeamCard from './team-card'
 
 export default async function EventDetailPage({
   params,
@@ -121,71 +122,7 @@ export default async function EventDetailPage({
               ) : (
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
                   {teams.map((team) => (
-                    <div
-                      key={team.id}
-                      className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-                    >
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {team.name}
-                      </h3>
-                      <p className="mt-2 text-sm text-gray-600">
-                        {team.description}
-                      </p>
-                      <div className="mt-4 space-y-2">
-                        <div className="flex items-center text-sm text-gray-500">
-                          <svg
-                            className="mr-2 h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"
-                            />
-                          </svg>
-                          Max size: {team.max_size || 'Unlimited'}
-                        </div>
-                        {team.allowed_branches && (
-                          <div className="flex items-center text-sm text-gray-500">
-                            <svg
-                              className="mr-2 h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                              />
-                            </svg>
-                            Branches: {team.allowed_branches.join(', ')}
-                          </div>
-                        )}
-                        {team.allowed_years && (
-                          <div className="flex items-center text-sm text-gray-500">
-                            <svg
-                              className="mr-2 h-4 w-4"
-                              fill="none"
-                              viewBox="0 0 24 24"
-                              stroke="currentColor"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                              />
-                            </svg>
-                            Years: {team.allowed_years.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    <TeamCard key={team.id} team={team} userId={user.id} />
                   ))}
                 </div>
               )}
