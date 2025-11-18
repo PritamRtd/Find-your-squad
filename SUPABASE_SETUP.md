@@ -114,15 +114,25 @@ You can customize the email templates sent to users:
 - Ensure your middleware is configured correctly
 - Check that the Supabase client is properly initialized
 
+## Database Schema Setup
+
+After setting up authentication, apply the MVP database schema:
+
+1. Navigate to your Supabase project's **SQL Editor**
+2. Copy the contents of `supbase/migrations/mvp_schema.sql`
+3. Paste and run the migration in the SQL Editor
+4. This creates tables for profiles, events, teams, and team members with proper RLS policies
+
+See `supbase/migrations/README.md` for detailed instructions.
+
 ## Next Steps
 
 Once authentication is working, you can:
 
-1. Add user profiles by creating a `profiles` table
-2. Implement Row Level Security (RLS) policies
-3. Add social authentication (Google, GitHub, etc.)
-4. Create additional protected routes
-5. Add real-time features using Supabase Realtime
+1. Apply the database migration from `supbase/migrations/mvp_schema.sql`
+2. Add social authentication (Google, GitHub, etc.)
+3. Create additional protected routes
+4. Add real-time features using Supabase Realtime
 
 ## Resources
 
