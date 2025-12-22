@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       // Check if profile exists
       const { data: profile } = await supabase
         .from('profiles')
-        .select('*')
+        .select('year_of_study, branch')
         .eq('id', data.user.id)
         .single()
 
@@ -46,6 +46,14 @@ export async function GET(request: NextRequest) {
 
         if (insertError) {
           console.error('Error creating profile:', insertError)
+          // Sign out the user if profile creation fails
+          await supabase.auth.signOut()
+          return NextResponse.redirect(
+            new URL(
+              '/login?error=Failed to create user profile. Please try again.',
+              request.url
+            )
+          )
         }
 
         // Redirect to onboarding for first-time users
