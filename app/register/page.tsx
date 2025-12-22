@@ -21,6 +21,13 @@ export default function RegisterPage() {
     setSuccess(false)
     setLoading(true)
 
+    // Validate email domain
+    if (!email.endsWith('@rvce.edu.in')) {
+      setError('Only @rvce.edu.in email addresses are allowed')
+      setLoading(false)
+      return
+    }
+
     if (password !== confirmPassword) {
       setError('Passwords do not match')
       setLoading(false)
@@ -49,11 +56,26 @@ export default function RegisterPage() {
       }
 
       if (data.user) {
+        // Create profile entry for the new user
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .insert({
+            id: data.user.id,
+            year_of_study: null,
+            branch: null,
+            skills: null,
+            contact_info: email,
+          })
+
+        if (profileError) {
+          console.error('Error creating profile:', profileError)
+        }
+
         setSuccess(true)
         // If email confirmation is disabled, redirect immediately
         if (data.session) {
           setTimeout(() => {
-            router.push('/dashboard')
+            router.push('/onboarding')
             router.refresh()
           }, 1500)
         }
@@ -109,7 +131,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="relative block w-full rounded-md border-0 py-1.5 px-3 text-gray-900 ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                placeholder="Email address"
+                placeholder="Email address (must be @rvce.edu.in)"
               />
             </div>
             <div>
