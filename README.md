@@ -7,7 +7,9 @@ The easiest way to find teammates and explore tech events.
 - 🚀 Built with Next.js 14+ (App Router)
 - 💎 TypeScript for type safety
 - 🎨 Tailwind CSS for styling
-- 🔐 Supabase authentication
+- 🔐 Google OAuth & Email/Password authentication via Supabase
+- 🏫 RVCE email domain restriction (`@rvce.edu.in` only)
+- 👤 User onboarding for profile completion
 - 🛡️ Protected routes with middleware
 - 📱 Responsive design
 
@@ -85,11 +87,28 @@ Find-your-squad/
 
 ## Authentication Flow
 
-1. **Registration**: Users can create an account with email/password
-2. **Login**: Existing users can sign in
-3. **Protected Routes**: The dashboard is protected by middleware
-4. **Session Management**: Supabase handles sessions automatically
-5. **Logout**: Users can logout from the dashboard
+The application uses Supabase Authentication with support for:
+
+### Google OAuth (Recommended)
+- Users can sign in with their Google account
+- **Only `@rvce.edu.in` email addresses are allowed**
+- First-time users are redirected to onboarding to complete their profile
+- See [GOOGLE_AUTH_SETUP.md](./GOOGLE_AUTH_SETUP.md) for setup instructions
+
+### Email/Password Authentication
+- Users can create an account with email/password
+- Email must be from the `@rvce.edu.in` domain
+- Existing users can sign in with their credentials
+
+### Authentication Process
+1. **Login**: User signs in with Google OAuth or email/password
+2. **Email Validation**: System verifies the email is from `@rvce.edu.in` domain
+3. **Profile Check**: System checks if user profile exists and is complete
+4. **Onboarding**: First-time users complete their profile (year of study, branch, skills)
+5. **Dashboard**: Users with complete profiles access the dashboard
+6. **Protected Routes**: Middleware ensures only authenticated users access protected pages
+7. **Session Management**: Supabase handles sessions automatically
+8. **Logout**: Users can logout from the dashboard
 
 ## Build for Production
 
