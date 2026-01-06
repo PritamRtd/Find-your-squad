@@ -31,15 +31,21 @@ export default function OnboardingForm() {
         return
       }
 
+      // Normalize skills into a string array so it matches the TEXT[] column
+      const parsedSkills = skills
+        .split(',')
+        .map((skill) => skill.trim())
+        .filter(Boolean)
+
       // Update the user's profile
       const { error: updateError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          id: user.id,
           year_of_study: yearOfStudy,
           branch: branch,
-          skills: skills,
+          skills: parsedSkills,
         })
-        .eq('id', user.id)
 
       if (updateError) {
         throw updateError
@@ -50,6 +56,7 @@ export default function OnboardingForm() {
     } catch (err) {
       console.error('Error updating profile:', err)
       setError(err instanceof Error ? err.message : 'Failed to update profile')
+    } finally {
       setLoading(false)
     }
   }

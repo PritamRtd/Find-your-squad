@@ -1,21 +1,24 @@
-'use server'
+'use client'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/client'
 
 /**
- * Server Action to handle team join requests with validation.
+ * Client-side helper to handle team join requests with validation.
  * Validates user attributes against team rules before creating a request.
- * 
+ *
  * @param teamId - The ID of the team to join
  * @param userId - The ID of the user requesting to join
  * @returns Success message or throws an error with specific validation message
  */
 export async function joinTeam(teamId: string, userId: string) {
-  const supabase = await createClient()
+  const supabase = createClient()
 
   try {
     // Verify that the authenticated user matches the userId parameter
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     
     if (authError || !user) {
       throw new Error('Authentication required')
@@ -61,12 +64,16 @@ export async function joinTeam(teamId: string, userId: string) {
     // 4. VALIDATION
 
     // Check if user has already requested or is a member
-    const { data: existingMembership } = await supabase
+    const { data: existingMembership, error: existingError } = await supabase
       .from('team_members')
       .select('status')
       .eq('team_id', teamId)
       .eq('user_id', userId)
       .maybeSingle()
+
+    if (existingError) {
+      throw new Error('Failed to check existing membership')
+    }
 
     if (existingMembership) {
       if (existingMembership.status === 'pending') {
