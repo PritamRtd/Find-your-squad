@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import CreateEventButton from './create-event-button'
 
 export default async function EventsPage() {
   const supabase = await createClient()
@@ -52,12 +53,19 @@ export default async function EventsPage() {
       <div className="py-10">
         <header>
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-900">
-              Events
-            </h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Browse available events and create teams
-            </p>
+            <div className="md:flex md:items-center md:justify-between">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-900">
+                  Events
+                </h1>
+                <p className="mt-2 text-sm text-gray-600">
+                  Browse available events and create teams
+                </p>
+              </div>
+              <div className="mt-4 flex md:ml-4 md:mt-0">
+                <CreateEventButton />
+              </div>
+            </div>
           </div>
         </header>
         <main>
