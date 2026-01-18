@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import MobileNav from "./components/mobile-nav";
 
 export const metadata: Metadata = {
   title: "Find Your Squad",
@@ -14,7 +15,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        {children}
+        <main className="pb-16 md:pb-0">
+          {children}
+        </main>
+        <MobileNav />
       </body>
     </html>
   );

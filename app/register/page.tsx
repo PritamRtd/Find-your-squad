@@ -49,11 +49,18 @@ export default function RegisterPage() {
       }
 
       if (data.user) {
+        // Create initial profile entry for the user
+        await supabase
+          .from('profiles')
+          .insert([{ id: data.user.id }])
+        
+        // Profile creation errors are non-critical - the profile will be created/updated during onboarding
+
         setSuccess(true)
-        // If email confirmation is disabled, redirect immediately
+        // If email confirmation is disabled, redirect immediately to onboarding
         if (data.session) {
           setTimeout(() => {
-            router.push('/dashboard')
+            router.push('/onboarding')
             router.refresh()
           }, 1500)
         }
@@ -91,7 +98,7 @@ export default function RegisterPage() {
             <div className="rounded-md bg-green-50 p-4">
               <div className="text-sm text-green-800">
                 Account created successfully! {!loading && 'Please check your email to confirm your account.'}
-                {loading && 'Redirecting to dashboard...'}
+                {loading && 'Redirecting to complete your profile...'}
               </div>
             </div>
           )}
