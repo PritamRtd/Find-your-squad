@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import LogoutButton from './logout-button'
+import Navbar from '../components/navbar'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -38,11 +39,12 @@ export default async function DashboardPage() {
         name,
         description,
         event_id,
+        creator_id,
         events(title)
       )
     `)
     .eq('user_id', user.id)
-    .eq('status', 'accepted')
+    .in('status', ['accepted', 'leader', 'admin'])
 
   // For each accepted team, fetch the leader's contact info
   const teamsWithLeaders = await Promise.all(
@@ -64,43 +66,59 @@ export default async function DashboardPage() {
     })
   )
 
+  // Count pending requests for teams user owns
+  const { data: ownedTeams } = await supabase
+    .from('teams')
+    .select('id')
+    .eq('creator_id', user.id)
+
+  const teamIds = ownedTeams?.map(t => t.id) || []
+  
+  let pendingCount = 0
+  if (teamIds.length > 0) {
+    const { count } = await supabase
+      .from('team_members')
+      .select('*', { count: 'exact', head: true })
+      .in('team_id', teamIds)
+      .eq('status', 'pending')
+    pendingCount = count || 0
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 justify-between">
-            <div className="flex">
-              <div className="flex flex-shrink-0 items-center">
-                <h1 className="text-xl font-bold text-gray-900">
-                  Find Your Squad
-                </h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/dashboard/requests"
-                className="text-sm font-medium text-gray-700 hover:text-gray-900"
-              >
-                Requests
-              </Link>
-              <Link
-                href="/events"
-                className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-              >
-                Browse Events
-              </Link>
-              <LogoutButton />
-            </div>
-          </div>
-        </div>
-      </nav>
+      <Navbar user={user} profile={profile} />
 
-      <div className="py-10">
+      <div className="pt-4 md:pt-20 pb-20 md:pb-8">
         <header>
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <h1 className="text-3xl font-bold leading-tight tracking-tight text-gray-900">
-              Dashboard
-            </h1>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Welcome back, {profile?.full_name || user?.email?.split('@')[0]}!
+                </h1>
+                <p className="text-gray-600 mt-1">Here's what's happening with your teams</p>
+              </div>
+              <div className="flex gap-3">
+                {pendingCount > 0 && (
+                  <Link
+                    href="/chat"
+                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-yellow-700 bg-yellow-100 rounded-lg hover:bg-yellow-200 transition-colors"
+                  >
+                    <span className="w-5 h-5 flex items-center justify-center bg-yellow-600 text-white text-xs rounded-full">
+                      {pendingCount}
+                    </span>
+                    Pending Requests
+                  </Link>
+                )}
+                <Link
+                  href="/explore"
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Explore Events
+                </Link>
+                <LogoutButton />
+              </div>
+            </div>
           </div>
         </header>
         <main>
@@ -161,62 +179,53 @@ export default async function DashboardPage() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                      {teamsWithLeaders.map((membership) => (
-                        <div
-                          key={membership.id}
-                          className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm"
-                        >
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {(membership.teams as any).name}
-                          </h3>
-                          {(membership.teams as any).description && (
-                            <p className="mt-2 text-sm text-gray-600">
-                              {(membership.teams as any).description}
-                            </p>
-                          )}
-                          <div className="mt-4 space-y-2">
-                            <div className="flex items-center text-sm text-gray-500">
-                              <svg
-                                className="mr-2 h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                />
-                              </svg>
-                              Event: {(membership.teams as any).events?.title || 'Unknown'}
+                      {teamsWithLeaders.map((membership) => {
+                        const isLeader = membership.status === 'leader'
+                        const isAdmin = membership.status === 'admin'
+                        return (
+                          <div
+                            key={membership.id}
+                            className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <h3 className="text-lg font-semibold text-gray-900">
+                                {(membership.teams as any).name}
+                              </h3>
+                              {(isLeader || isAdmin) && (
+                                <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  isLeader ? 'bg-yellow-100 text-yellow-800' : 'bg-purple-100 text-purple-800'
+                                }`}>
+                                  {isLeader ? 'Leader' : 'Admin'}
+                                </span>
+                              )}
                             </div>
-                            <div className="rounded-md bg-green-50 p-3 mt-4">
-                              <div className="flex">
-                                <div className="flex-shrink-0">
-                                  <svg
-                                    className="h-5 w-5 text-green-400"
-                                    viewBox="0 0 20 20"
-                                    fill="currentColor"
-                                  >
-                                    <path
-                                      d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"
-                                    />
-                                  </svg>
-                                </div>
-                                <div className="ml-3">
-                                  <h3 className="text-sm font-medium text-green-800">
-                                    Leader Contact
-                                  </h3>
-                                  <div className="mt-1 text-sm text-green-700">
-                                    {membership.leaderContactInfo}
-                                  </div>
-                                </div>
-                              </div>
+                            {(membership.teams as any).description && (
+                              <p className="text-sm text-gray-600 line-clamp-2 mb-3">
+                                {(membership.teams as any).description}
+                              </p>
+                            )}
+                            <div className="text-sm text-gray-500 mb-4">
+                              <span className="font-medium">Event:</span> {(membership.teams as any).events?.title || 'Unknown'}
+                            </div>
+                            <div className="flex gap-2">
+                              <Link
+                                href={`/chat?team=${membership.team_id}`}
+                                className="flex-1 px-3 py-2 text-sm font-medium text-center text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                              >
+                                Chat
+                              </Link>
+                              {(isLeader || isAdmin) && (
+                                <Link
+                                  href={`/teams/${membership.team_id}/manage`}
+                                  className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                >
+                                  Manage
+                                </Link>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
