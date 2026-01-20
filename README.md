@@ -1,95 +1,74 @@
+
 # Find Your Squad
 
-The easiest way to find teammates and explore tech events.
+A modern platform to find teammates and join tech events or hackathons.
 
 ## Features
 
-- 🚀 Built with Next.js 14+ (App Router)
-- 💎 TypeScript for type safety
-- 🎨 Tailwind CSS for styling
-- 🔐 Supabase authentication
-- 🛡️ Protected routes with middleware
-- 📱 Responsive design
+- 🚀 Next.js 14+ (App Router)
+- 💎 TypeScript
+- 🎨 Tailwind CSS
+- 🔐 Supabase Auth & Storage
+- 💬 Team & Direct Messaging
+- 📱 Responsive, mobile-first design
 
 ## Pages
 
-- **Home** (`/`) - Landing page with navigation
-- **Login** (`/login`) - User authentication
-- **Register** (`/register`) - New user registration
-- **Dashboard** (`/dashboard`) - Protected dashboard (requires authentication)
+- **Home** – Clean landing page, quick intro & CTA
+- **Explore** – Browse events, teams, and people
+- **Chat** – Team and direct messaging
+- **Dashboard** – Your teams, quick actions, pending requests
+- **Profile** – Edit your info, skills, and avatar
 
 ## Getting Started
 
 ### Prerequisites
 
-- Node.js 18.17 or later
-- A Supabase account and project
+- Node.js 18.17+
+- Supabase project
 
 ### Installation
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/PreetamRtd/Find-your-squad.git
 cd Find-your-squad
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Set up environment variables:
+1. Create `.env.local` in the root:
 
-Create a `.env.local` file in the root directory and add your Supabase credentials:
-
-```env
+```
 NEXT_PUBLIC_SUPABASE_URL=your-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-You can find these values in your [Supabase Dashboard](https://app.supabase.com) under Project Settings > API.
+2. Start the dev server:
 
-4. Run the development server:
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000)
 
 ### Supabase Setup
 
-1. Create a new project on [Supabase](https://app.supabase.com)
-2. The authentication is already set up! Supabase creates the necessary tables automatically
-3. (Optional) Configure email templates in Authentication > Email Templates
-4. (Optional) Disable email confirmation in Authentication > Providers > Email for development
+- Create a project at [Supabase](https://app.supabase.com)
+- Copy your API keys to `.env.local`
+- Run the SQL in `supbase/migrations/` to set up tables and storage
+- (Optional) Configure email templates in Supabase Auth
 
 ## Project Structure
 
 ```
-Find-your-squad/
-├── app/
-│   ├── dashboard/         # Protected dashboard page
-│   ├── login/            # Login page
-│   ├── register/         # Registration page
-│   ├── layout.tsx        # Root layout
-│   ├── page.tsx          # Home page
-│   └── globals.css       # Global styles
-├── lib/
-│   └── supabase/         # Supabase client utilities
-│       ├── client.ts     # Browser client
-│       ├── server.ts     # Server client
-│       └── middleware.ts # Middleware utilities
-├── middleware.ts         # Next.js middleware for auth
-└── .env.example          # Example environment variables
+app/
+	dashboard/      # Dashboard page
+	explore/        # Explore events/teams
+	chat/           # Messaging
+	profile/        # User profile
+	...
+lib/supabase/     # Supabase client/server utils
+supbase/          # SQL migrations
 ```
-
-## Authentication Flow
-
-1. **Registration**: Users can create an account with email/password
-2. **Login**: Existing users can sign in
-3. **Protected Routes**: The dashboard is protected by middleware
-4. **Session Management**: Supabase handles sessions automatically
-5. **Logout**: Users can logout from the dashboard
 
 ## Build for Production
 
@@ -97,13 +76,6 @@ Find-your-squad/
 npm run build
 npm start
 ```
-
-## Technologies Used
-
-- [Next.js](https://nextjs.org/) - React framework
-- [TypeScript](https://www.typescriptlang.org/) - Type safety
-- [Tailwind CSS](https://tailwindcss.com/) - Styling
-- [Supabase](https://supabase.com/) - Backend & Authentication
 
 ## License
 
