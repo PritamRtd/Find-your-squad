@@ -36,8 +36,33 @@ export default async function ExplorePage() {
     `)
     .order('created_at', { ascending: false })
 
+  // Fetch all profiles (excluding current user) for People tab
+  const { data: allProfiles } = await supabase
+    .from('profiles')
+    .select('*')
+    .neq('id', user.id)
+    .not('full_name', 'is', null)
+    .order('full_name', { ascending: true })
+
+  // Fetch teams where the current user is a leader (for inviting people)
+  const { data: userLeaderTeams } = await supabase
+    .from('teams')
+    .select(`
+      id,
+      name,
+      event_id,
+      max_size,
+      team_members(id, status)
+    `)
+    .eq('created_by', user.id)
+
   // Process teams to add member count
   const teamsWithCount = teams?.map(team => ({
+    ...team,
+    memberCount: team.team_members?.filter((m: any) => m.status === 'accepted' || m.status === 'leader').length || 0
+  }))
+
+  const leaderTeamsWithCount = userLeaderTeams?.map(team => ({
     ...team,
     memberCount: team.team_members?.filter((m: any) => m.status === 'accepted' || m.status === 'leader').length || 0
   }))
@@ -48,6 +73,8 @@ export default async function ExplorePage() {
       profile={profile}
       events={events || []}
       teams={teamsWithCount || []}
+      people={allProfiles || []}
+      userLeaderTeams={leaderTeamsWithCount || []}
     />
   )
 }

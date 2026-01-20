@@ -13,6 +13,7 @@ interface TeamCardProps {
     max_size: number | null
     allowed_branches: string[] | null
     allowed_years: string[] | null
+    required_skills: string[] | null
     // Update this type:
     team_members: Array<{ id: string }> 
   }
@@ -165,6 +166,18 @@ export default function TeamCard({ team, userId }: TeamCardProps) {
               />
             </svg>
             Years: {team.allowed_years.join(', ')}
+          </div>
+        )}
+        {team.required_skills && team.required_skills.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-gray-500 mb-1">Looking for:</p>
+            <div className="flex flex-wrap gap-1">
+              {team.required_skills.map((skill, idx) => (
+                <span key={idx} className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded">
+                  {skill}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>

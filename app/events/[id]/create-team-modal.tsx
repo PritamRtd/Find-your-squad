@@ -19,30 +19,21 @@ export default function CreateTeamModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Form state
+  // Simplified form state - only what teams need (event defines structure)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
-  const [maxSize, setMaxSize] = useState('')
-  const [branchLimit, setBranchLimit] = useState<'all' | 'specific'>('all')
-  const [selectedBranches, setSelectedBranches] = useState<string[]>([])
-  const [yearLimit, setYearLimit] = useState<'all' | 'specific'>('all')
-  const [selectedYears, setSelectedYears] = useState<string[]>([])
+  const [requiredSkills, setRequiredSkills] = useState<string[]>([])
+  const [skillInput, setSkillInput] = useState('')
 
-  const branches = ['CS', 'ECE', 'Mech', 'Civil', 'EE', 'IT']
-  const years = ['1st', '2nd', '3rd', '4th']
-
-  const handleBranchToggle = (branch: string) => {
-    setSelectedBranches((prev) =>
-      prev.includes(branch)
-        ? prev.filter((b) => b !== branch)
-        : [...prev, branch]
-    )
+  const addSkill = () => {
+    if (skillInput.trim() && !requiredSkills.includes(skillInput.trim())) {
+      setRequiredSkills(prev => [...prev, skillInput.trim()])
+      setSkillInput('')
+    }
   }
 
-  const handleYearToggle = (year: string) => {
-    setSelectedYears((prev) =>
-      prev.includes(year) ? prev.filter((y) => y !== year) : [...prev, year]
-    )
+  const removeSkill = (skill: string) => {
+    setRequiredSkills(prev => prev.filter(s => s !== skill))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,23 +47,13 @@ export default function CreateTeamModal({
         throw new Error('Team name is required')
       }
 
-      if (branchLimit === 'specific' && selectedBranches.length === 0) {
-        throw new Error('Please select at least one branch')
-      }
-
-      if (yearLimit === 'specific' && selectedYears.length === 0) {
-        throw new Error('Please select at least one year')
-      }
-
-      // Prepare team data
-      const teamData = {
+      // Simplified team data - event defines the structure constraints
+      const teamData: any = {
         event_id: eventId,
         creator_id: userId,
         name: name.trim(),
         description: description.trim() || null,
-        max_size: maxSize ? parseInt(maxSize) : null,
-        allowed_branches: branchLimit === 'all' ? null : selectedBranches,
-        allowed_years: yearLimit === 'all' ? null : selectedYears,
+        required_skills: requiredSkills.length > 0 ? requiredSkills : null,
       }
 
       // Insert team
@@ -98,11 +79,8 @@ export default function CreateTeamModal({
       // Success - reset form and close modal
       setName('')
       setDescription('')
-      setMaxSize('')
-      setBranchLimit('all')
-      setSelectedBranches([])
-      setYearLimit('all')
-      setSelectedYears([])
+      setRequiredSkills([])
+      setSkillInput('')
       setIsOpen(false)
 
       // Refresh the page to show new team
@@ -227,152 +205,65 @@ export default function CreateTeamModal({
                           onChange={(e) => setDescription(e.target.value)}
                           rows={3}
                           className="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 bg-white shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                          placeholder="Describe your team..."
+                          placeholder="Describe your team and what you're working on..."
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label
-                        htmlFor="maxSize"
-                        className="block text-sm font-medium leading-6 text-gray-900"
-                      >
-                        Max Team Size
+                      <label className="block text-sm font-medium leading-6 text-gray-900 mb-2">
+                        Looking for Skills (optional)
                       </label>
-                      <div className="mt-2">
+                      <p className="text-xs text-gray-500 mb-2">What skills are you looking for in teammates?</p>
+                      <div className="flex gap-2 mb-2">
                         <input
-                          type="number"
-                          id="maxSize"
-                          value={maxSize}
-                          onChange={(e) => setMaxSize(e.target.value)}
-                          min="1"
-                          className="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 bg-white shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
-                          placeholder="Leave empty for unlimited"
+                          type="text"
+                          value={skillInput}
+                          onChange={(e) => setSkillInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              addSkill();
+                            }
+                          }}
+                          className="flex-1 rounded-md border-0 px-3 py-1.5 text-gray-900 bg-white shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-blue-600 sm:text-sm sm:leading-6"
+                          placeholder="e.g., React, Python, UI/UX Design"
                         />
+                        <button
+                          type="button"
+                          onClick={addSkill}
+                          className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100"
+                        >
+                          Add
+                        </button>
                       </div>
+                      {requiredSkills.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {requiredSkills.map((skill, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-sm bg-purple-50 text-purple-700 rounded"
+                            >
+                              {skill}
+                              <button
+                                type="button"
+                                onClick={() => removeSkill(skill)}
+                                className="hover:text-purple-900"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium leading-6 text-gray-900 mb-2">
-                        Branch Limit
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex items-center">
-                          <input
-                            type="radio"
-                            id="branch-all"
-                            checked={branchLimit === 'all'}
-                            onChange={() => {
-                              setBranchLimit('all')
-                              setSelectedBranches([])
-                            }}
-                            className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-600"
-                          />
-                          <label
-                            htmlFor="branch-all"
-                            className="ml-3 block text-sm font-medium leading-6 text-gray-900"
-                          >
-                            Allow All Branches
-                          </label>
-                        </div>
-                        <div>
-                          <div className="flex items-center">
-                            <input
-                              type="radio"
-                              id="branch-specific"
-                              checked={branchLimit === 'specific'}
-                              onChange={() => setBranchLimit('specific')}
-                              className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-600"
-                            />
-                            <label
-                              htmlFor="branch-specific"
-                              className="ml-3 block text-sm font-medium leading-6 text-gray-900"
-                            >
-                              Specific Branches
-                            </label>
-                          </div>
-                          {branchLimit === 'specific' && (
-                            <div className="mt-2 ml-7 space-y-2">
-                              {branches.map((branch) => (
-                                <label
-                                  key={branch}
-                                  className="flex items-center"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedBranches.includes(branch)}
-                                    onChange={() => handleBranchToggle(branch)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
-                                  />
-                                  <span className="ml-2 text-sm text-gray-700">
-                                    {branch}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium leading-6 text-gray-900 mb-2">
-                        Year Limit
-                      </label>
-                      <div className="space-y-3">
-                        <div className="flex items-center">
-                          <input
-                            type="radio"
-                            id="year-all"
-                            checked={yearLimit === 'all'}
-                            onChange={() => {
-                              setYearLimit('all')
-                              setSelectedYears([])
-                            }}
-                            className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-600"
-                          />
-                          <label
-                            htmlFor="year-all"
-                            className="ml-3 block text-sm font-medium leading-6 text-gray-900"
-                          >
-                            Allow All Years
-                          </label>
-                        </div>
-                        <div>
-                          <div className="flex items-center">
-                            <input
-                              type="radio"
-                              id="year-specific"
-                              checked={yearLimit === 'specific'}
-                              onChange={() => setYearLimit('specific')}
-                              className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-600"
-                            />
-                            <label
-                              htmlFor="year-specific"
-                              className="ml-3 block text-sm font-medium leading-6 text-gray-900"
-                            >
-                              Specific Years
-                            </label>
-                          </div>
-                          {yearLimit === 'specific' && (
-                            <div className="mt-2 ml-7 space-y-2">
-                              {years.map((year) => (
-                                <label key={year} className="flex items-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedYears.includes(year)}
-                                    onChange={() => handleYearToggle(year)}
-                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-600"
-                                  />
-                                  <span className="ml-2 text-sm text-gray-700">
-                                    {year} Year
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
+                    <div className="bg-blue-50 rounded-lg p-3">
+                      <p className="text-sm text-blue-700">
+                        <strong>Note:</strong> Team composition rules (branches, years, size) are defined by the event organizer.
+                      </p>
                     </div>
 
                     <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">

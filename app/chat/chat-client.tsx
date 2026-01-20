@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Navbar from "../components/navbar";
-import { sendMessage, acceptRequest, rejectRequest } from "./chat-actions";
+import { sendMessage, acceptRequest, rejectRequest, getOrCreateDMConversation, sendDM } from "./chat-actions";
 import { createClient } from "@/lib/supabase/client";
 
 interface Message {
   id: string;
-  team_id: string;
+  team_id?: string;
+  conversation_id?: string;
   sender_id: string;
   content: string;
   message_type: string;
@@ -28,6 +29,24 @@ interface Conversation {
   pendingRequests: any[];
   lastMessage?: Message;
   unreadCount: number;
+  type: 'team' | 'dm';
+  otherUser?: any;
+}
+
+interface DMConversation {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  updated_at: string;
+  otherUser?: {
+    id: string;
+    full_name?: string;
+    avatar_url?: string;
+    branch?: string;
+    year_of_study?: string;
+  };
+  lastMessage?: any;
+  unreadCount: number;
 }
 
 interface ChatClientProps {
@@ -38,6 +57,8 @@ interface ChatClientProps {
   lastMessages: Record<string, any>;
   unreadByTeam: Record<string, number>;
   selectedTeamId?: string;
+  dmConversations?: DMConversation[];
+  selectedDMUserId?: string | null;
 }
 
 // Polling interval in milliseconds (3 seconds)
@@ -50,24 +71,43 @@ export default function ChatClient({
   teamsWithRequests,
   lastMessages: initialLastMessages,
   unreadByTeam: initialUnreadByTeam,
-  selectedTeamId
+  selectedTeamId,
+  dmConversations: initialDMConversations = [],
+  selectedDMUserId
 }: ChatClientProps) {
   const [activeChat, setActiveChat] = useState<string | null>(selectedTeamId || null);
+  const [activeChatType, setActiveChatType] = useState<'team' | 'dm'>('team');
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [showMobileList, setShowMobileList] = useState(!selectedTeamId);
+  const [showMobileList, setShowMobileList] = useState(!selectedTeamId && !selectedDMUserId);
   const [lastMessages, setLastMessages] = useState(initialLastMessages);
   const [unreadByTeam, setUnreadByTeam] = useState(initialUnreadByTeam);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  const [dmConversations, setDMConversations] = useState<DMConversation[]>(initialDMConversations);
+  const [chatTab, setChatTab] = useState<'teams' | 'direct'>('teams');
+  const [creatingDM, setCreatingDM] = useState(false);
+
+  // Set mounted after hydration to avoid hydration mismatch with date formatting
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Handle selectedDMUserId - create or open DM conversation
+  useEffect(() => {
+    if (selectedDMUserId && mounted) {
+      handleStartDM(selectedDMUserId);
+    }
+  }, [selectedDMUserId, mounted]);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastFetchedIdRef = useRef<string | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Build conversations list
-  const allConversations: Conversation[] = [
+  // Build team conversations list
+  const teamConversations: Conversation[] = [
     ...memberships.map(m => ({
       id: m.team_id,
       name: m.teams?.name || 'Unknown Team',
@@ -78,6 +118,7 @@ export default function ChatClient({
       pendingRequests: [] as any[],
       lastMessage: lastMessages[m.team_id],
       unreadCount: unreadByTeam[m.team_id] || 0,
+      type: 'team' as const,
     })),
     ...teamsWithRequests
       .filter(t => !memberships.some(m => m.team_id === t.id))
@@ -91,20 +132,96 @@ export default function ChatClient({
         pendingRequests: t.pendingRequests || [],
         lastMessage: lastMessages[t.id],
         unreadCount: unreadByTeam[t.id] || 0,
+        type: 'team' as const,
       })),
   ].filter((v, i, a) => a.findIndex(t => t.id === v.id) === i);
 
   // Add pending requests to owned teams
-  allConversations.forEach(conv => {
+  teamConversations.forEach(conv => {
     const teamWithRequests = teamsWithRequests.find(t => t.id === conv.id);
     if (teamWithRequests) {
       conv.pendingRequests = teamWithRequests.pendingRequests || [];
     }
   });
 
-  const activeConversation = allConversations.find(c => c.id === activeChat);
+  // Build DM conversations list
+  const directConversations: Conversation[] = dmConversations.map(dm => ({
+    id: dm.id,
+    name: dm.otherUser?.full_name || 'Unknown User',
+    description: dm.otherUser?.branch ? `${dm.otherUser.branch}${dm.otherUser.year_of_study ? ` • ${dm.otherUser.year_of_study}` : ''}` : '',
+    eventTitle: undefined,
+    isOwner: false,
+    status: 'active',
+    pendingRequests: [],
+    lastMessage: dm.lastMessage,
+    unreadCount: dm.unreadCount,
+    type: 'dm' as const,
+    otherUser: dm.otherUser,
+  }));
 
-  // Fetch messages function
+  // Get active conversation based on type
+  const activeConversation = activeChatType === 'team' 
+    ? teamConversations.find(c => c.id === activeChat)
+    : directConversations.find(c => c.id === activeChat);
+
+  // Handle starting a DM with a user
+  const handleStartDM = async (otherUserId: string) => {
+    setCreatingDM(true);
+    setError(null);
+    try {
+      const result = await getOrCreateDMConversation(otherUserId);
+      if (result.success && result.conversationId) {
+        // Check if we already have this conversation in our list
+        const existingDM = dmConversations.find(dm => dm.id === result.conversationId);
+        if (!existingDM) {
+          // Fetch the other user's profile
+          const supabase = createClient();
+          const { data: otherProfile } = await supabase
+            .from('profiles')
+            .select('id, full_name, avatar_url, branch, year_of_study')
+            .eq('id', otherUserId)
+            .single();
+
+          // Add the new conversation to the list
+          setDMConversations(prev => [{
+            id: result.conversationId!,
+            user1_id: user.id < otherUserId ? user.id : otherUserId,
+            user2_id: user.id < otherUserId ? otherUserId : user.id,
+            updated_at: new Date().toISOString(),
+            otherUser: otherProfile || undefined,
+            lastMessage: undefined,
+            unreadCount: 0,
+          }, ...prev]);
+        }
+        
+        // Switch to direct tab and open the conversation
+        setChatTab('direct');
+        setActiveChat(result.conversationId);
+        setActiveChatType('dm');
+        setShowMobileList(false);
+        lastFetchedIdRef.current = null;
+      } else {
+        // Check if it's a "table doesn't exist" error
+        const errorMsg = result.error || 'Failed to start conversation';
+        if (errorMsg.includes('does not exist') || errorMsg.includes('42P01')) {
+          setError('Direct messages feature is not set up. Please run the migration first.');
+        } else {
+          setError(errorMsg);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error starting DM:', err);
+      const errorMsg = err.message || 'Failed to start conversation';
+      if (errorMsg.includes('does not exist') || errorMsg.includes('42P01')) {
+        setError('Direct messages feature is not set up. Please run the migration first.');
+      } else {
+        setError(errorMsg);
+      }
+    }
+    setCreatingDM(false);
+  };
+
+  // Fetch team messages function
   const fetchMessages = useCallback(async (teamId: string, isInitial = false) => {
     if (isInitial) setLoading(true);
     setError(null);
@@ -125,7 +242,17 @@ export default function ChatClient({
         .eq('team_id', teamId)
         .order('created_at', { ascending: true });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('Supabase fetch error:', fetchError);
+        // Show the actual Supabase error
+        const errorMessage = fetchError.code === 'PGRST301' 
+          ? 'Access denied: You may not have permission to view these messages. Make sure you are an accepted team member.'
+          : fetchError.code === '42P01'
+          ? 'Database error: Messages table not found. Please check your Supabase setup.'
+          : `Database error (${fetchError.code}): ${fetchError.message}`;
+        setError(errorMessage);
+        return;
+      }
 
       // Transform the data to match our Message interface
       const transformedMessages: Message[] = (data || []).map((msg: any) => ({
@@ -141,7 +268,7 @@ export default function ChatClient({
       }
     } catch (err: any) {
       console.error('Error fetching messages:', err);
-      setError('Failed to load messages. Please try again.');
+      setError(`Connection error: ${err.message || 'Failed to connect to database. Check your internet connection.'}`);
     } finally {
       if (isInitial) setLoading(false);
     }
@@ -167,7 +294,18 @@ export default function ChatClient({
         .eq('team_id', teamId)
         .order('created_at', { ascending: true });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        // Silently ignore permission errors during polling (expected when user leaves chat)
+        // Also ignore network errors during polling - they're transient
+        if (fetchError.code === 'PGRST301' || fetchError.code === '42501') {
+          return; // Permission denied - expected, don't log
+        }
+        // Only log unexpected errors in development, don't spam console
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Polling fetch issue:', fetchError.code, fetchError.message);
+        }
+        return;
+      }
 
       if (data) {
         const transformedMessages: Message[] = data.map((msg: any) => ({
@@ -192,7 +330,124 @@ export default function ChatClient({
         });
       }
     } catch (err) {
-      console.error('Polling error:', err);
+      // Silently handle polling errors - they're usually transient network issues
+    }
+  }, []);
+
+  // Fetch DM messages function
+  const fetchDMMessages = useCallback(async (conversationId: string, isInitial = false) => {
+    if (isInitial) setLoading(true);
+    setError(null);
+    
+    try {
+      const supabase = createClient();
+      
+      // Fetch messages without the relationship (we'll get profiles separately)
+      const { data, error: fetchError } = await supabase
+        .from('direct_messages')
+        .select(`
+          id,
+          conversation_id,
+          sender_id,
+          content,
+          message_type,
+          created_at
+        `)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (fetchError) {
+        console.error('DM fetch error:', fetchError);
+        if (fetchError.code === '42P01') {
+          setError('Direct messages feature is not set up. Please run the migration.');
+        } else {
+          setError(`Error loading messages: ${fetchError.message}`);
+        }
+        return;
+      }
+
+      // Get unique sender IDs and fetch their profiles
+      const senderIds = [...new Set((data || []).map(msg => msg.sender_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, avatar_url')
+        .in('id', senderIds);
+
+      // Create a map of profiles by ID
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      const transformedMessages: Message[] = (data || []).map((msg: any) => ({
+        ...msg,
+        profiles: profileMap.get(msg.sender_id) || { full_name: 'Unknown', avatar_url: null }
+      }));
+      
+      setMessages(transformedMessages);
+      
+      if (transformedMessages.length > 0) {
+        lastFetchedIdRef.current = transformedMessages[transformedMessages.length - 1].id;
+      }
+    } catch (err: any) {
+      console.error('Error fetching DM messages:', err);
+      setError(`Connection error: ${err.message || 'Failed to load messages.'}`);
+    } finally {
+      if (isInitial) setLoading(false);
+    }
+  }, []);
+
+  // Poll for new DM messages
+  const pollForDMMessages = useCallback(async (conversationId: string) => {
+    try {
+      const supabase = createClient();
+      
+      const { data, error: fetchError } = await supabase
+        .from('direct_messages')
+        .select(`
+          id,
+          conversation_id,
+          sender_id,
+          content,
+          message_type,
+          created_at
+        `)
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (fetchError) {
+        return; // Silently fail for polling
+      }
+
+      if (data && data.length > 0) {
+        // Get unique sender IDs and fetch their profiles
+        const senderIds = [...new Set(data.map(msg => msg.sender_id))];
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name, avatar_url')
+          .in('id', senderIds);
+
+        // Create a map of profiles by ID
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+        const transformedMessages: Message[] = data.map((msg: any) => ({
+          ...msg,
+          profiles: profileMap.get(msg.sender_id) || { full_name: 'Unknown', avatar_url: null }
+        }));
+
+        setMessages(prev => {
+          if (transformedMessages.length !== prev.length) {
+            return transformedMessages;
+          }
+          if (prev.length > 0 && transformedMessages.length > 0) {
+            const lastPrev = prev[prev.length - 1];
+            const lastNew = transformedMessages[transformedMessages.length - 1];
+            if (lastPrev.id !== lastNew.id) {
+              return transformedMessages;
+            }
+          }
+          return prev;
+        });
+      }
+    } catch (err) {
+      // Silently handle polling errors
     }
   }, []);
 
@@ -200,12 +455,20 @@ export default function ChatClient({
   useEffect(() => {
     if (!activeChat) return;
 
-    // Initial fetch
-    fetchMessages(activeChat, true);
+    // Initial fetch based on chat type
+    if (activeChatType === 'dm') {
+      fetchDMMessages(activeChat, true);
+    } else {
+      fetchMessages(activeChat, true);
+    }
 
     // Start polling
     pollingRef.current = setInterval(() => {
-      pollForMessages(activeChat);
+      if (activeChatType === 'dm') {
+        pollForDMMessages(activeChat);
+      } else {
+        pollForMessages(activeChat);
+      }
     }, POLL_INTERVAL);
 
     // Cleanup
@@ -215,14 +478,14 @@ export default function ChatClient({
         pollingRef.current = null;
       }
     };
-  }, [activeChat, fetchMessages, pollForMessages]);
+  }, [activeChat, activeChatType, fetchMessages, pollForMessages, fetchDMMessages, pollForDMMessages]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Send message handler
+  // Send message handler (team or DM)
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !activeChat || sending) return;
@@ -235,7 +498,8 @@ export default function ChatClient({
     // Optimistic update - add message immediately
     const optimisticMessage: Message = {
       id: `temp-${Date.now()}`,
-      team_id: activeChat,
+      team_id: activeChatType === 'team' ? activeChat : undefined,
+      conversation_id: activeChatType === 'dm' ? activeChat : undefined,
       sender_id: user.id,
       content: messageContent,
       message_type: 'text',
@@ -248,15 +512,31 @@ export default function ChatClient({
     setMessages(prev => [...prev, optimisticMessage]);
 
     try {
-      await sendMessage(activeChat, messageContent);
-      // Fetch latest messages to get the real message with ID
-      await fetchMessages(activeChat, false);
+      let result;
+      if (activeChatType === 'dm') {
+        result = await sendDM(activeChat, messageContent);
+      } else {
+        result = await sendMessage(activeChat, messageContent);
+      }
+      
+      if (!result.success) {
+        console.error('Server error:', result.error);
+        setError(result.error || 'Failed to send message');
+        setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
+        setNewMessage(messageContent);
+      } else {
+        // Fetch latest messages to get the real message with ID
+        if (activeChatType === 'dm') {
+          await fetchDMMessages(activeChat, false);
+        } else {
+          await fetchMessages(activeChat, false);
+        }
+      }
     } catch (err: any) {
       console.error('Error sending message:', err);
-      setError('Failed to send message. Please try again.');
-      // Remove optimistic message on error
+      setError(err.message || 'Failed to send message. Please try again.');
       setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id));
-      setNewMessage(messageContent); // Restore the message
+      setNewMessage(messageContent);
     } finally {
       setSending(false);
     }
@@ -287,8 +567,10 @@ export default function ChatClient({
     }
   };
 
-  // Format time helper
+  // Format time helper - returns empty string during SSR to avoid hydration mismatch
   const formatTime = (dateString: string) => {
+    if (!mounted) return '';
+    
     const date = new Date(dateString);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
@@ -305,7 +587,11 @@ export default function ChatClient({
   };
 
   // Calculate total unread
-  const totalUnread = Object.values(unreadByTeam).reduce((a, b) => a + b, 0);
+  const totalUnread = Object.values(unreadByTeam).reduce((a, b) => a + b, 0) + 
+    dmConversations.reduce((sum, dm) => sum + dm.unreadCount, 0);
+
+  // Get current conversations based on active tab
+  const currentConversations = chatTab === 'teams' ? teamConversations : directConversations;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -319,22 +605,71 @@ export default function ChatClient({
               <h1 className="text-xl font-bold text-gray-900">Messages</h1>
               <p className="text-xs text-gray-500 mt-1">Auto-updates every 3 seconds</p>
             </div>
+
+            {/* Tab Switcher */}
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => setChatTab('teams')}
+                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                  chatTab === 'teams'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                  </svg>
+                  Teams
+                  {teamConversations.reduce((sum, c) => sum + c.unreadCount, 0) > 0 && (
+                    <span className="w-5 h-5 flex items-center justify-center text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                      {teamConversations.reduce((sum, c) => sum + c.unreadCount, 0) > 9 ? '9+' : teamConversations.reduce((sum, c) => sum + c.unreadCount, 0)}
+                    </span>
+                  )}
+                </div>
+              </button>
+              <button
+                onClick={() => setChatTab('direct')}
+                className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                  chatTab === 'direct'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                  </svg>
+                  Direct
+                  {directConversations.reduce((sum, c) => sum + c.unreadCount, 0) > 0 && (
+                    <span className="w-5 h-5 flex items-center justify-center text-[10px] font-bold text-white bg-blue-600 rounded-full">
+                      {directConversations.reduce((sum, c) => sum + c.unreadCount, 0) > 9 ? '9+' : directConversations.reduce((sum, c) => sum + c.unreadCount, 0)}
+                    </span>
+                  )}
+                </div>
+              </button>
+            </div>
             
             <div className="flex-1 overflow-y-auto">
-              {allConversations.length === 0 ? (
+              {currentConversations.length === 0 ? (
                 <div className="p-6 text-center text-gray-500">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-12 h-12 mx-auto mb-3 text-gray-300">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
                   </svg>
-                  <p className="font-medium">No conversations yet</p>
-                  <p className="text-sm mt-1">Join a team to start chatting</p>
+                  <p className="font-medium">
+                    {chatTab === 'teams' ? 'No team conversations yet' : 'No direct messages yet'}
+                  </p>
+                  <p className="text-sm mt-1">
+                    {chatTab === 'teams' ? 'Join a team to start chatting' : 'Find people in Explore to start a conversation'}
+                  </p>
                 </div>
               ) : (
-                allConversations.map((conv) => (
+                currentConversations.map((conv) => (
                   <button
                     key={conv.id}
                     onClick={() => {
                       setActiveChat(conv.id);
+                      setActiveChatType(conv.type);
                       setShowMobileList(false);
                       lastFetchedIdRef.current = null;
                     }}
@@ -342,11 +677,24 @@ export default function ChatClient({
                       activeChat === conv.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''
                     }`}
                   >
-                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-bold text-lg">
-                        {conv.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
+                    {/* Avatar */}
+                    {conv.type === 'dm' && conv.otherUser?.avatar_url ? (
+                      <img
+                        src={conv.otherUser.avatar_url}
+                        alt={conv.name}
+                        className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        conv.type === 'dm' 
+                          ? 'bg-gradient-to-br from-green-500 to-teal-600' 
+                          : 'bg-gradient-to-br from-blue-500 to-purple-600'
+                      }`}>
+                        <span className="text-white font-bold text-lg">
+                          {conv.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex-1 min-w-0 text-left">
                       <div className="flex justify-between items-start">
                         <h3 className="font-semibold text-gray-900 truncate">
@@ -359,14 +707,14 @@ export default function ChatClient({
                         )}
                       </div>
                       <p className="text-sm text-gray-500 truncate">
-                        {conv.eventTitle || 'No event'}
+                        {conv.type === 'dm' ? conv.description || 'Direct message' : conv.eventTitle || 'No event'}
                       </p>
                       {conv.lastMessage && (
                         <p className="text-sm text-gray-600 truncate mt-1">
                           {conv.lastMessage.content}
                         </p>
                       )}
-                      {conv.pendingRequests.length > 0 && (
+                      {conv.pendingRequests && conv.pendingRequests.length > 0 && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 mt-1">
                           {conv.pendingRequests.length} request{conv.pendingRequests.length > 1 ? 's' : ''}
                         </span>
@@ -397,23 +745,45 @@ export default function ChatClient({
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
                     </svg>
                   </button>
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                    <span className="text-white font-bold">
-                      {activeConversation.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
+                  {/* Avatar */}
+                  {activeChatType === 'dm' && activeConversation.otherUser?.avatar_url ? (
+                    <img
+                      src={activeConversation.otherUser.avatar_url}
+                      alt={activeConversation.name}
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      activeChatType === 'dm' 
+                        ? 'bg-gradient-to-br from-green-500 to-teal-600' 
+                        : 'bg-gradient-to-br from-blue-500 to-purple-600'
+                    }`}>
+                      <span className="text-white font-bold">
+                        {activeConversation.name.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <h2 className="font-semibold text-gray-900 truncate">{activeConversation.name}</h2>
-                    <p className="text-sm text-gray-500 truncate">{activeConversation.eventTitle || 'Team chat'}</p>
+                    <p className="text-sm text-gray-500 truncate">
+                      {activeChatType === 'dm' 
+                        ? activeConversation.description || 'Direct message' 
+                        : activeConversation.eventTitle || 'Team chat'}
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {activeConversation.isOwner && (
+                    {activeChatType === 'team' && activeConversation.isOwner && (
                       <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">
                         Leader
                       </span>
                     )}
+                    {activeChatType === 'dm' && (
+                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                        DM
+                      </span>
+                    )}
                     <button
-                      onClick={() => fetchMessages(activeChat, false)}
+                      onClick={() => activeChatType === 'dm' ? fetchDMMessages(activeChat, false) : fetchMessages(activeChat, false)}
                       className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg"
                       title="Refresh messages"
                     >
@@ -436,8 +806,8 @@ export default function ChatClient({
                   </div>
                 )}
 
-                {/* Pending Requests Banner */}
-                {activeConversation.pendingRequests.length > 0 && activeConversation.isOwner && (
+                {/* Pending Requests Banner - only for team chats */}
+                {activeChatType === 'team' && activeConversation.pendingRequests && activeConversation.pendingRequests.length > 0 && activeConversation.isOwner && (
                   <div className="p-4 bg-yellow-50 border-b border-yellow-100">
                     <h3 className="font-semibold text-yellow-800 mb-3 flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -593,14 +963,14 @@ export default function ChatClient({
                 </div>
 
                 {/* Message Input */}
-                {activeConversation.status !== 'pending' ? (
+                {activeChatType === 'dm' || activeConversation.status !== 'pending' ? (
                   <form onSubmit={handleSendMessage} className="p-4 border-t border-gray-200 bg-white">
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
-                        placeholder="Type a message..."
+                        placeholder={activeChatType === 'dm' ? `Message ${activeConversation.name}...` : "Type a message..."}
                         disabled={sending}
                         className="flex-1 px-4 py-2.5 border border-gray-300 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-50 text-gray-900 bg-white"
                       />
@@ -632,13 +1002,22 @@ export default function ChatClient({
               </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-8">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-20 h-20 mb-4 text-gray-300">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
-                </svg>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Select a conversation</h2>
-                <p className="text-center max-w-sm">
-                  Choose a team from the sidebar to view messages and collaborate with your teammates
-                </p>
+                {creatingDM ? (
+                  <>
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                    <p className="text-gray-600">Starting conversation...</p>
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-20 h-20 mb-4 text-gray-300">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+                    </svg>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">Select a conversation</h2>
+                    <p className="text-center max-w-sm">
+                      Choose a team or direct message from the sidebar to start chatting
+                    </p>
+                  </>
+                )}
               </div>
             )}
           </div>

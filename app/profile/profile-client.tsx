@@ -12,6 +12,58 @@ interface ProfileClientProps {
   memberTeams: any[];
 }
 
+// Image compression utility
+const compressImage = (file: File, maxWidth: number = 400, quality: number = 0.8): Promise<File> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        // Calculate new dimensions while maintaining aspect ratio
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Could not get canvas context'));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Could not compress image'));
+              return;
+            }
+            const compressedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => reject(new Error('Could not load image'));
+    };
+    reader.onerror = () => reject(new Error('Could not read file'));
+  });
+};
+
 export default function ProfileClient({ user, profile, adminTeams, memberTeams }: ProfileClientProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -28,43 +80,76 @@ export default function ProfileClient({ user, profile, adminTeams, memberTeams }
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(profile?.avatar_url || null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setAvatarFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        // Compress the image before storing
+        const compressedFile = await compressImage(file, 400, 0.8);
+        setAvatarFile(compressedFile);
+        
+        // Show preview of compressed image
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setAvatarPreview(reader.result as string);
+        };
+        reader.readAsDataURL(compressedFile);
+      } catch (err) {
+        console.error('Error compressing image:', err);
+        // Fallback to original file if compression fails
+        setAvatarFile(file);
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setAvatarPreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      }
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+    }
     setSaving(true);
+    setError(null);
+    setSuccess(null);
     try {
       let avatarUrl = profile?.avatar_url;
       
       if (avatarFile) {
-        const formData = new FormData();
-        formData.append('file', avatarFile);
-        const result = await uploadAvatar(formData);
+        const formDataObj = new FormData();
+        formDataObj.append('file', avatarFile);
+        const result = await uploadAvatar(formDataObj);
+        if (result.error) {
+          setError(`Avatar upload failed: ${result.error}`);
+          setSaving(false);
+          return;
+        }
         if (result.url) {
           avatarUrl = result.url;
         }
       }
 
-      await updateProfile({
+      const updateResult = await updateProfile({
         ...formData,
         avatar_url: avatarUrl,
         skills: formData.skills.split(',').map((s: string) => s.trim()).filter(Boolean),
       });
       
-      setIsEditing(false);
-    } catch (error) {
+      if (!updateResult.success) {
+        setError(updateResult.error || 'Failed to update profile');
+      } else {
+        setSuccess('Profile updated successfully!');
+        setIsEditing(false);
+        setTimeout(() => setSuccess(null), 3000);
+      }
+    } catch (error: any) {
       console.error('Error saving profile:', error);
+      setError(error.message || 'Failed to save profile');
     }
     setSaving(false);
   };
@@ -87,10 +172,44 @@ export default function ProfileClient({ user, profile, adminTeams, memberTeams }
       
       <div className="pt-4 md:pt-20 pb-20 md:pb-8">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2 text-red-700">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+                <span>{error}</span>
+              </div>
+              <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {/* Success Banner */}
+          {success && (
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center justify-between">
+              <div className="flex items-center gap-2 text-green-700">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{success}</span>
+              </div>
+              <button onClick={() => setSuccess(null)} className="text-green-500 hover:text-green-700">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
+
           {/* Profile Header */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Cover Photo */}
-            <div className="h-32 bg-gradient-to-r from-blue-500 to-purple-600"></div>
+            <div className="h-32 bg-gray-100"></div>
             
             {/* Profile Info */}
             <div className="relative px-6 pb-6">
@@ -131,13 +250,15 @@ export default function ProfileClient({ user, profile, adminTeams, memberTeams }
                   {isEditing ? (
                     <>
                       <button
+                        type="button"
                         onClick={() => setIsEditing(false)}
                         className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                       >
                         Cancel
                       </button>
                       <button
-                        onClick={handleSubmit}
+                        type="button"
+                        onClick={() => handleSubmit()}
                         disabled={saving}
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
                       >
@@ -146,6 +267,7 @@ export default function ProfileClient({ user, profile, adminTeams, memberTeams }
                     </>
                   ) : (
                     <button
+                      type="button"
                       onClick={() => setIsEditing(true)}
                       className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                     >
